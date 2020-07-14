@@ -4,6 +4,7 @@
 const puppeteer = require('puppeteer')
 const fs = require('fs')
 const retry = require('async-retry')
+const nodemailer = require('nodemailer')
 const dateObj = new Date()
 const actualMonth = dateObj.getUTCMonth() + 1
 let actualDay = dateObj.getUTCDate() 
@@ -20,11 +21,9 @@ const processParams = {
 
 const checkPatent = async() =>{
         try{
-            console.log(processParams.codigoPatente)
             let codigoPatente = processParams.codigoPatente
-            codigoPatente = codigoPatente.trim()
+            codigoPatente = codigoPatente.replace(/\s+/g, '')
             console.log(codigoPatente)
-             browser.close()
         await retry(async bail => {
             await processDataRequest(codigoPatente)
         })
@@ -42,7 +41,7 @@ const procesarReCaptcha = async () => {
         // Procesamos el re captcha
         console.log('***anticaptcha')
         anticaptcha.setWebsiteURL(URL_CONSULTA_INFRACCIONES)
-        anticaptcha.setWebsiteKey("6LdwS08UAAAAALS3Vi6zEITCELwuodHhOQLt8lVv")
+        anticaptcha.setWebsiteKey("6Lc7ghEUAAAAAH9fu3estiLfVWZrU0uaWeIplQ2q")
 
         // Nos aseguramos de que existan: 
         // * El input donde pegamos el token final
@@ -77,8 +76,8 @@ const procesarReCaptcha = async () => {
                             // Actualizamos Recaptcha TextArea
                             await page.type('#g-recaptcha-response', taskSolution)
 
-                            await page.waitForSelector('button.btn.btn-primary.btn-sm')
-                            await page.click('button.btn.btn-primary.btn-sm')
+                            await page.waitForSelector('#edit-submit')
+                            await page.click('#edit-submit')
                             // Actualizamos Recaptcha Input que esta adentro del iframe del Recaptcha.
                             // Esto lo tenemos que hacer porque viene con un response token x default y si no lo actualizamos con el token que generó
                             // el resultado de anti-captcha, lo pasa como invalido
@@ -105,66 +104,92 @@ const procesarReCaptcha = async () => {
 const dataOutput = async () => {
     return new Promise(async function(resolve, reject) {
         try {
-            await page.waitForSelector('#aimprimir > div')
+            let datosExtraidosDeActa = []
+            let patenteVehicular = processParams.codigoPatente
 
-            let verificacion = await page.$eval('#aimprimir > div', e => e.innerText)
-            if (verificacion.includes('No existen deudas registradas para el CUIT-CUIL-CDI')){
-                console.log('No existen deudas registradas para el CUIT-CUIL-CDI '+processParams.codigoPatente)
-                process.exit()
+            await page.waitFor(5000)
+            if (await page.$("#block-system-main > div > div.container > div.panel-pane.pane-block.pane-gcaba-infracciones-gcaba-infracciones > div > div > div > div.libreDeuda-view.mt-2 > p") !== null){
+                await page.screenshot({path: __dirname+"/download/"+patenteVehicular+'screenshot.png',fullPage: true })
+                let sinInfracciones = "La patente "+patenteVehicular+" no posee ninguna infraccion"
+                const resultado_extraido = JSON.stringify({
+                    "Patente del Vehiculo": patenteVehicular,
+                    "Resultado Extraido" : sinInfracciones
+                })
+                datosExtraidosDeActa.push(resultado_extraido)
+                fs.appendFileSync('Patente-'+patenteVehicular+'.json',datosExtraidosDeActa)
+                resolve(true)
+                logSuccessAndExit()
             }
+
+            await page.waitForSelector('#tipo-consulta')
+
+            let cantidadDeActas = (await page.$$('#accordion > div > div.panel-heading > h4 > a')).length 
+            await page.waitForSelector('#accordion > div:nth-child(2) > div.panel-heading > h4 > a')
+
+            let filaDeActa = 0
             
-            await page.waitForSelector('div.right-arrow.pull-right')
-            await page.click('div.right-arrow.pull-right')
+            await page.screenshot({path: __dirname+"/download/"+patenteVehicular+'success_screenshot.png',fullPage: true })
 
-            await page.waitForSelector('#\\31  > div > table')
-            let o24meses = await page.$eval('#\\31  > div > table > tbody > tr', e => e.innerText)
-            o24meses = JSON.stringify(o24meses)
-            const array24meses = o24meses.split('\\t')
-            console.log(array24meses[1])
 
-            let allData = await page.$eval('#aimprimir > table.table.table-BCRA.table-bordered.table-responsive > tbody', e => e.innerText)
-            const convertStringify = JSON.stringify(allData)
-            console.log(convertStringify)
-            const separateFila = convertStringify.split('\\t')
-            const putJSONData = JSON.stringify({
-                "Denominacion del deudor":separateFila[0],
-                "Entidad":separateFila[1],
-                "Periodo":separateFila[2],
-                "Situacion":separateFila[3],
-                "Monto":separateFila[4],
-                "Días de atraso":separateFila[5],
-                "Observaciones":separateFila[6]
+            for(filaDeActa = 0; filaDeActa < cantidadDeActas; filaDeActa++){    
+                await page.waitFor(5000)
+                const seleccionDeActa = await page.$$('#accordion > div > div.panel-heading > h4 > a');
+                await seleccionDeActa[filaDeActa].click();
+                let columnaDeActa = await page.$$('#accordion > div > div.panel-heading > h4 > a')
+                let idDelActa = await page.evaluate(columnaDeActa => columnaDeActa.hash, columnaDeActa[filaDeActa])
+                let selectorDatosdelActa = idDelActa+'> div > div > div > p'
+                selectorDatosdelActa = selectorDatosdelActa.toString()
+                let datosDelActa = await page.$$(selectorDatosdelActa)
 
-            })
-            const putJSONHistorial = JSON.stringify({
-                "Historial 24 meses":{
-                    "Periodo":array24meses[0],
-                    "Situacion":array24meses[1],
-                    "Monto":array24meses[2],
-                    "proceso judicial/Revision":array24meses[3]
-                },
-            })
-            
-            fs.appendFileSync("situacion_crediticia"+processParams.codigoPatente+'.json', putJSONData,putJSONHistorial)
-            console.log(putJSONData)
-                browser.close()
-                process.exit()
+                let verificacionDeDescuento = await page.evaluate(datosDelActa => datosDelActa.innerText, datosDelActa[0])
+                let fechaHorarioEmision = await page.evaluate(datosDelActa => datosDelActa.innerText, datosDelActa[1])
+                let infraccion = await page.evaluate(datosDelActa => datosDelActa.innerText, datosDelActa[3])
+                let puntos = await page.evaluate(datosDelActa => datosDelActa.innerText, datosDelActa[5])
+                let descripcion = await page.evaluate(datosDelActa => datosDelActa.innerText, datosDelActa[7])
+
+                if(verificacionDeDescuento.includes('Descuento válido hasta:')){
+                    fechaHorarioEmision = await page.evaluate(datosDelActa => datosDelActa.innerText, datosDelActa[3])
+                    infraccion = await page.evaluate(datosDelActa => datosDelActa.innerText, datosDelActa[5])
+                    puntos = await page.evaluate(datosDelActa => datosDelActa.innerText, datosDelActa[7])
+                    descripcion = await page.evaluate(datosDelActa => datosDelActa.innerText, datosDelActa[9]) 
+                }
+
+                const resultado_extraido = JSON.stringify({
+                    "Patente del Vehiculo": patenteVehicular,
+                    "Fecha y hora de Emision": fechaHorarioEmision,
+                    "Infraccion": infraccion,
+                    "puntos":puntos,
+                    "descripcion": descripcion
+                })
+                datosExtraidosDeActa.push(resultado_extraido)
+
+                console.log(datosExtraidosDeActa)
+                console.log('--------------------------------------')
+            }
+
+            fs.appendFileSync('Patente-'+patenteVehicular+'.json',datosExtraidosDeActa)
+          
+            resolve(true)
+            logSuccessAndExit()
+
         } catch (err) {
             console.log(err)
             reject(err)
         }
     })
 }
+
+
  
 
 const processDataRequest = async (codigoPatente) => {
     return new Promise(async function(resolve, reject) {
            try {
 
-            await page.waitForSelector('input.form-control')
-            await page.click('input.form-control')
+            await page.waitForSelector('#edit-dominio')
+            await page.click('#edit-dominio')
 
-            await page.type('input.form-control',codigoPatente)
+            await page.type('#edit-dominio',codigoPatente)
 
             const captchaSolved = await procesarReCaptcha()
             if (captchaSolved) {
@@ -174,9 +199,6 @@ const processDataRequest = async (codigoPatente) => {
                 browser.close()
             }
 
-            
-
-        
            /* try {
                 const result = await dataOutput()
                 resolve(result)
@@ -199,7 +221,7 @@ const processDataRequest = async (codigoPatente) => {
 
 const preparePage = async () => {
     browser = await puppeteer.launch({
-         headless: false,
+         headless: true,
         //headless: true,
         args: [
             '--no-sandbox',
@@ -269,7 +291,7 @@ const logErrorAndExit = async error => {
 const logSuccessAndExit = async resultData => {
     //const resultChangeStatus = await updateJobResult(processParams.job_id, 'finished', resultData, null)
     console.log(JSON.stringify({
-        state: 'normal',
+        state: 'success',
             /*data: {
             job_id: processParams.job_id,
             job_type: processParams.job_type,
