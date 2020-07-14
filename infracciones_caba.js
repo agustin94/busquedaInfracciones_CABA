@@ -15,7 +15,9 @@ const anticaptcha = require('./anti-captcha/anticaptcha')(antiCaptchaCreds.token
 const URL_CONSULTA_INFRACCIONES = 'https://www.buenosaires.gob.ar/consulta-de-infracciones'
 
 const processParams = {
-    codigoPatente: process.argv[2]
+    codigoPatente: process.argv[2],
+    email_addresses: process.argv[3]
+
 }
 
 
@@ -35,6 +37,84 @@ const checkPatent = async() =>{
             throw new Error(err)
         }
 }
+
+const getEmailTransporter = () => {
+    const EMAIL_HOST = 'smtp.gmail.com'
+    const SMTP_EMAIL_USER = 'agustin@theeye.io'
+    const SMTP_EMAIL_PASSWORD = 'Automation1971!'
+
+    var transporter = nodemailer.createTransport({
+        host: EMAIL_HOST,
+        port: '587',
+        auth: {
+            user: SMTP_EMAIL_USER,
+            pass: SMTP_EMAIL_PASSWORD
+        },
+        secureConnection: false,
+        tls: {
+            ciphers: 'SSLv3'
+        },
+        requireTLS: true
+    });
+
+    return transporter
+}
+
+const sendResultConciliacionEmail = async (codigoPatente) => {
+    return new Promise(async (resolve, reject) => {
+        try {
+            let transporter = getEmailTransporter()
+           
+
+            //const attachmentsReport = await readReportFiles(resultAttachments)
+
+            let htmlFinal = '<h3>Tenemos resultados sobre su patente.</h3>'
+            htmlFinal += '<p>Se adjunta imagen con los resultados obtenidos en el sitio de Consulta de Infracciones.</p>'
+            htmlFinal += '<p>Hasta la próxima!</p><p>THE EYE BOT</p>'
+            let viewPatent = codigoPatente
+            console.log(viewPatent)
+            // setup e-mail data with unicode symbols
+            const NO_REPLY_ADDRESS = 'support@theeye.io'
+            var mailOptions = {
+                from: NO_REPLY_ADDRESS,
+                to: 'agustin.moreno94@gmail.com',
+                 cc: 'guidoher@theeye.io',
+                subject: 'TheEye - Infracciones Bot - PROCESO FINALIZADO',
+                html: htmlFinal,
+                attachments: [{
+                    filename: viewPatent+'screenshot.png',
+                    path: __dirname+'//download//'+viewPatent+'screenshot.png'
+                },
+                {
+                    filename: 'Patente-'+viewPatent+'.json',
+                    path: __dirname+'//'+'Patente-'+viewPatent+'.json'
+                }]
+            }
+
+            resolve(true)
+
+            // send mail with defined transport object
+            transporter.sendMail(mailOptions, function (err, info) {
+                if (err) {
+                    console.log(err);
+                    reject(err)
+                    logErrorAndExit()
+                } else {
+                    console.log('email enviado');
+                    resolve(true)
+                    logSuccessAndExit()
+                }
+            });
+        } catch (err) {
+            console.log(err)
+            reject(err)
+        }
+    })
+}
+
+
+
+
 
 const procesarReCaptcha = async () => {
     return new Promise(async function(resolve, reject) {
@@ -101,15 +181,16 @@ const procesarReCaptcha = async () => {
 }
 
 
-const dataOutput = async () => {
+const dataOutput = async (codigoPatente) => {
     return new Promise(async function(resolve, reject) {
         try {
             let datosExtraidosDeActa = []
-            let patenteVehicular = processParams.codigoPatente
+            let patenteVehicular = codigoPatente
 
             await page.waitFor(5000)
             if (await page.$("#block-system-main > div > div.container > div.panel-pane.pane-block.pane-gcaba-infracciones-gcaba-infracciones > div > div > div > div.libreDeuda-view.mt-2 > p") !== null){
                 await page.screenshot({path: __dirname+"/download/"+patenteVehicular+'screenshot.png',fullPage: true })
+
                 let sinInfracciones = "La patente "+patenteVehicular+" no posee ninguna infraccion"
                 const resultado_extraido = JSON.stringify({
                     "Patente del Vehiculo": patenteVehicular,
@@ -118,7 +199,7 @@ const dataOutput = async () => {
                 datosExtraidosDeActa.push(resultado_extraido)
                 fs.appendFileSync('Patente-'+patenteVehicular+'.json',datosExtraidosDeActa)
                 resolve(true)
-                logSuccessAndExit()
+                sendResultConciliacionEmail(codigoPatente)
             }
 
             await page.waitForSelector('#tipo-consulta')
@@ -128,7 +209,7 @@ const dataOutput = async () => {
 
             let filaDeActa = 0
             
-            await page.screenshot({path: __dirname+"/download/"+patenteVehicular+'success_screenshot.png',fullPage: true })
+            await page.screenshot({path: __dirname+"/download/"+patenteVehicular+'screenshot.png',fullPage: true })
 
 
             for(filaDeActa = 0; filaDeActa < cantidadDeActas; filaDeActa++){    
@@ -167,10 +248,9 @@ const dataOutput = async () => {
                 console.log('--------------------------------------')
             }
 
-            fs.appendFileSync('Patente-'+patenteVehicular+'.json',datosExtraidosDeActa)
-          
+            fs.appendFileSync('Patente-'+patenteVehicular+'.json',datosExtraidosDeActa)          
             resolve(true)
-            logSuccessAndExit()
+            sendResultConciliacionEmail(codigoPatente)
 
         } catch (err) {
             console.log(err)
@@ -193,7 +273,7 @@ const processDataRequest = async (codigoPatente) => {
 
             const captchaSolved = await procesarReCaptcha()
             if (captchaSolved) {
-                await dataOutput()
+                await dataOutput(codigoPatente)
             } else {
                 reject('Error solving captcha')
                 browser.close()
