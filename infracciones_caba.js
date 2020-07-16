@@ -16,7 +16,9 @@ const URL_CONSULTA_INFRACCIONES = 'https://www.buenosaires.gob.ar/consulta-de-in
 
 const processParams = {
     codigoPatente: process.argv[2],
-    email_addresses: process.argv[3]
+    email_addresses: process.argv[3],
+    email_password: process.argv[4],
+    email_toSend: process.argv[5]
 
 }
 
@@ -25,7 +27,7 @@ const checkPatent = async() =>{
         try{
             let codigoPatente = processParams.codigoPatente
             codigoPatente = codigoPatente.replace(/\s+/g, '')
-            console.log(codigoPatente)
+           // console.log(codigoPatente)
         await retry(async bail => {
             await processDataRequest(codigoPatente)
         })
@@ -40,8 +42,8 @@ const checkPatent = async() =>{
 
 const getEmailTransporter = () => {
     const EMAIL_HOST = 'smtp.gmail.com'
-    const SMTP_EMAIL_USER = 'agustin@theeye.io'
-    const SMTP_EMAIL_PASSWORD = 'Automation1971!'
+    const SMTP_EMAIL_USER = processParams.email_addresses
+    const SMTP_EMAIL_PASSWORD = processParams.email_password
 
     var transporter = nodemailer.createTransport({
         host: EMAIL_HOST,
@@ -69,16 +71,16 @@ const sendResultConciliacionEmail = async (codigoPatente) => {
             //const attachmentsReport = await readReportFiles(resultAttachments)
 
             let htmlFinal = '<h3>Tenemos resultados sobre su patente.</h3>'
-            htmlFinal += '<p>Se adjunta imagen con los resultados obtenidos en el sitio de Consulta de Infracciones.</p>'
+            htmlFinal += '<p>Se adjunta imagen con los resultados obtenidos en el sitio de Consulta de Infracciones en CABA.</p>'
             htmlFinal += '<p>Hasta la próxima!</p><p>THE EYE BOT</p>'
             let viewPatent = codigoPatente
-            console.log(viewPatent)
+            //console.log(viewPatent)
             // setup e-mail data with unicode symbols
             const NO_REPLY_ADDRESS = 'support@theeye.io'
             var mailOptions = {
                 from: NO_REPLY_ADDRESS,
-                to: 'agustin.moreno94@gmail.com',
-                 cc: 'guidoher@theeye.io',
+                to: processParams.email_toSend,
+                 //cc: 'guidoher@theeye.io',
                 subject: 'TheEye - Infracciones Bot - PROCESO FINALIZADO',
                 html: htmlFinal,
                 attachments: [{
@@ -244,8 +246,8 @@ const dataOutput = async (codigoPatente) => {
                 })
                 datosExtraidosDeActa.push(resultado_extraido)
 
-                console.log(datosExtraidosDeActa)
-                console.log('--------------------------------------')
+               // console.log(datosExtraidosDeActa)
+               // console.log('--------------------------------------')
             }
 
             fs.appendFileSync('Patente-'+patenteVehicular+'.json',datosExtraidosDeActa)          
@@ -328,7 +330,7 @@ const preparePage = async () => {
 }
 
 const run = async () => {
-    console.log(processParams)
+    //console.log(processParams)
     // preparo el navegador e ingreso al sistema
     await retry(async bail => {
         // if anything throws, we retry
