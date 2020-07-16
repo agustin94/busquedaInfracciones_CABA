@@ -27,7 +27,6 @@ const checkPatent = async() =>{
         try{
             let codigoPatente = processParams.codigoPatente
             codigoPatente = codigoPatente.replace(/\s+/g, '')
-           // console.log(codigoPatente)
         await retry(async bail => {
             await processDataRequest(codigoPatente)
         })
@@ -42,8 +41,13 @@ const checkPatent = async() =>{
 
 const getEmailTransporter = () => {
     const EMAIL_HOST = 'smtp.gmail.com'
-    const SMTP_EMAIL_USER = processParams.email_addresses
-    const SMTP_EMAIL_PASSWORD = processParams.email_password
+    let emailadress = processParams.email_addresses
+    emailadress = emailadress.replace(/'/g, "")
+    const SMTP_EMAIL_USER = emailadress
+    let emailpassword = processParams.email_password
+    emailpassword = emailpassword.replace(/'/g, "")
+  	
+    const SMTP_EMAIL_PASSWORD = emailpassword
 
     var transporter = nodemailer.createTransport({
         host: EMAIL_HOST,
@@ -66,8 +70,7 @@ const sendResultConciliacionEmail = async (codigoPatente) => {
     return new Promise(async (resolve, reject) => {
         try {
             let transporter = getEmailTransporter()
-           
-
+       
             //const attachmentsReport = await readReportFiles(resultAttachments)
 
             let htmlFinal = '<h3>Tenemos resultados sobre su patente.</h3>'
@@ -76,10 +79,12 @@ const sendResultConciliacionEmail = async (codigoPatente) => {
             let viewPatent = codigoPatente
             //console.log(viewPatent)
             // setup e-mail data with unicode symbols
+            let emailtosend = processParams.email_toSend
+    		emailtosend = emailtosend.replace(/'/g, "")
             const NO_REPLY_ADDRESS = 'support@theeye.io'
             var mailOptions = {
                 from: NO_REPLY_ADDRESS,
-                to: processParams.email_toSend,
+                to: emailtosend,
                  //cc: 'guidoher@theeye.io',
                 subject: 'TheEye - Infracciones Bot - PROCESO FINALIZADO',
                 html: htmlFinal,
@@ -89,7 +94,7 @@ const sendResultConciliacionEmail = async (codigoPatente) => {
                 },
                 {
                     filename: 'Patente-'+viewPatent+'.json',
-                    path: __dirname+'//'+'Patente-'+viewPatent+'.json'
+                    path: __dirname+'//download//'+'Patente-'+viewPatent+'.json'
                 }]
             }
 
@@ -153,6 +158,7 @@ const procesarReCaptcha = async () => {
 
                         try {
                             console.log('Paso el captcha!')
+                          
                             console.log('anticaptcha-taskSolution:', taskSolution)
 
                             // Actualizamos Recaptcha TextArea
@@ -250,7 +256,7 @@ const dataOutput = async (codigoPatente) => {
                // console.log('--------------------------------------')
             }
 
-            fs.appendFileSync('Patente-'+patenteVehicular+'.json',datosExtraidosDeActa)          
+            fs.appendFileSync(__dirname+'//download//'+'Patente-'+patenteVehicular+'.json',datosExtraidosDeActa)          
             resolve(true)
             sendResultConciliacionEmail(codigoPatente)
 
